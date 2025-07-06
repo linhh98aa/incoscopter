@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Inco Scopter - Hard Mode</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+      background: linear-gradient(to top, #001f3f, #003366);
+    }
+    #startScreen, #gameOver {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 20px;
+      cursor: pointer;
+    }
+    input {
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 18px;
+    }
+    #highScore {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.3);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 18px;
+      color: white;
+      z-index: 5;
+    }
+    #ranking {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 8px;
+      color: white;
+      font-size: 16px;
+      z-index: 10;
+      max-width: 300px;
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen">
+    <h1>Inco Scopter - Hard Mode</h1>
+    <p>How to play:</p>
+    <ul>
+      <li>Click to change direction (left/right)</li>
+      <li>Fly up and avoid obstacles</li>
+      <li>Score increases for each obstacle you pass</li>
+      <li>Camera follows you</li>
+    </ul>
+    <label>Enter your Inco Name:</label>
+    <input type="text" id="playerName" placeholder="Your Inco Name" />
+    <button id="startButton">Play</button>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+  <div id="gameOver" style="display:none;">
+    You Lose - Click to Play Again
+  </div>
+  <div id="highScore">High Score: 0</div>
+  <div id="ranking">
+    <h3>Top 10 Players</h3>
+    <ul id="rankList"></ul>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    window.addEventListener("resize", () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    const startScreen = document.getElementById("startScreen");
+    const startButton = document.getElementById("startButton");
+    const gameOver = document.getElementById("gameOver");
+    const highScoreDiv = document.getElementById("highScore");
+    const rankList = document.getElementById("rankList");
+    const playerNameInput = document.getElementById("playerName");
+
+    const characterImage = new Image();
+    characterImage.src = "mây ko nền1.png";
+
+    const obstacleImages = [
+      "mây ko nền.png",
+      "Artboard 1@1x_1.png",
+      "mây111.png",
+      "shy no nền.png"
+    ];
+    const obstacleLoaded = [];
+    obstacleImages.forEach(name => {
+      const img = new Image();
+      img.src = name;
+      obstacleLoaded.push(img);
+    });
+
+    let player = { x: 0, y: 300, width: 50, height: 50, velocityX: 3, velocityY: -5 };
+    let obstacles = [];
+    let obstacleGap = 150;
+    let score = 0;
+    let highScore = localStorage.getItem("highScore") || 0;
+    let playerName = "";
+    highScoreDiv.textContent = "High Score: " + highScore;
+    let isPlaying = false;
+    let rankings = JSON.parse(localStorage.getItem("rankings") || "[]");
+    let canSwitch = true;
+
+    function updateRanking(name, score) {
+      // remove duplicates before adding new
+      rankings = rankings.filter(r => r.name !== name);
+      rankings.push({ name, score });
+      rankings.sort((a,b) => b.score - a.score);
+      rankings = rankings.slice(0,10);
+      localStorage.setItem("rankings", JSON.stringify(rankings));
+      renderRanking();
+    }
+
+    function renderRanking() {
+      rankList.innerHTML = "";
+      rankings.forEach((entry, i) => {
+        let li = document.createElement("li");
+        li.textContent = `${i+1}. ${entry.name}: ${entry.score}`;
+        rankList.appendChild(li);
+      });
+    }
+
+    renderRanking();
+
+    function resetGame() {
+      player.x = 0;
+      player.y = 300;
+      player.velocityX = 3;
+      player.velocityY = -5;
+      score = 0;
+      obstacles = [];
+      for (let i = 1; i <= 200; i++) {
+        obstacles.push({
+          x: (Math.random() * 2400) - 1200,
+          y: -i * obstacleGap,
+          width: 80,
+          height: 80,
+          imageIndex: Math.floor(Math.random() * obstacleLoaded.length),
+          passed: false
+        });
+      }
+    }
+
+    function updateGame() {
+      player.y += player.velocityY;
+      player.x += player.velocityX;
+
+      if (player.x < -canvas.width/2) {
+        player.x = -canvas.width/2;
+        player.velocityX *= -1;
+      }
+      if (player.x + player.width > canvas.width/2) {
+        player.x = canvas.width/2 - player.width;
+        player.velocityX *= -1;
+      }
+
+      for (let obs of obstacles) {
+        if (
+          player.x + player.width > obs.x &&
+          player.x < obs.x + obs.width &&
+          player.y + player.height > obs.y &&
+          player.y < obs.y + obs.height
+        ) {
+          gameOver.style.display = "flex";
+          isPlaying = false;
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("highScore", highScore);
+            highScoreDiv.textContent = "High Score: " + highScore;
+          }
+          updateRanking(playerName, score);
+          return;
+        }
+        if (!obs.passed && obs.y > player.y + player.height) {
+          obs.passed = true;
+          score++;
+        }
+      }
+
+      for (let obs of obstacles) {
+        if (obs.y > player.y + canvas.height) {
+          obs.y = player.y - Math.random() * canvas.height - obstacleGap;
+          obs.x = (Math.random() * 2400) - 1200;
+          obs.imageIndex = Math.floor(Math.random() * obstacleLoaded.length);
+          obs.passed = false;
+        }
+      }
+    }
+
+    function drawGame() {
+      const camX = player.x - canvas.width / 2 + player.width/2;
+      const camY = player.y - canvas.height / 2 + player.height/2;
+
+      ctx.fillStyle = "#001f3f";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = 0; i < 100; i++) {
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+      }
+
+      for (let obs of obstacles) {
+        ctx.drawImage(
+          obstacleLoaded[obs.imageIndex],
+          obs.x - camX,
+          obs.y - camY,
+          obs.width,
+          obs.height
+        );
+      }
+
+      const drawX = canvas.width/2 - player.width/2;
+      const drawY = canvas.height/2 - player.height/2;
+      ctx.drawImage(characterImage, drawX, drawY, player.width, player.height);
+
+      ctx.fillStyle = "white";
+      ctx.font = "24px Arial";
+      ctx.fillText("Score: " + score, 20, 40);
+    }
+
+    function gameLoop() {
+      if (isPlaying) {
+        updateGame();
+        drawGame();
+      }
+      requestAnimationFrame(gameLoop);
+    }
+
+    canvas.addEventListener("click", function() {
+      if (isPlaying && canSwitch) {
+        player.velocityX *= -1;
+        canSwitch = false;
+        setTimeout(()=>{canSwitch = true;}, 200);
+      }
+    });
+
+    startButton.onclick = function () {
+      playerName = playerNameInput.value.trim() || "Anonymous";
+      resetGame();
+      startScreen.style.display = "none";
+      gameOver.style.display = "none";
+      isPlaying = true;
+    }
+
+    gameOver.onclick = function () {
+      resetGame();
+      gameOver.style.display = "none";
+      isPlaying = true;
+    }
+
+    gameLoop();
+  </script>
+</body>
+</html>
